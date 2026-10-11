@@ -1,0 +1,38 @@
+[project]
+name = "wildshield"
+version = "0.1.0"
+description = "Educational nighttime animal-detection prototype"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "numpy>=1.26,<3",
+  "opencv-python>=4.9,<5",
+  "ultralytics>=8.3,<9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+thermal = [
+  "adafruit-blinka>=8.50,<9",
+  "adafruit-circuitpython-mlx90640>=1.3,<2",
+  "hidapi>=0.14,<1",
+]
+
+[project.scripts]
+wildshield-rgb = "wildshield.main:main"
+wildshield-report = "wildshield.experiments.report:main"
+wildshield-thermal-check = "wildshield.sensors.thermal_check:main"
+wildshield-thermal = "wildshield.sensors.thermal_view:main"
+wildshield-fusion = "wildshield.fusion_demo:main"
+wildshield-trial = "wildshield.experiments.unified_trial:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wildshield"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
