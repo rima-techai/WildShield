@@ -17,16 +17,24 @@ from wildshield.sensors.simulated_radar import SimulatedRadar
 from wildshield.ui.alert import AudioEmitter, DetectionAlert
 from wildshield.ui.overlay import draw_overlay, draw_risk_panel
 
+IMAGE_SUFFIXES = frozenset({".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"})
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="WildShieldAI RGB animal-detection baseline")
     parser.add_argument("--source", default="0", help="Camera number, video path, image path, or stream URL")
     parser.add_argument("--model", default="yolo11n.pt", help="YOLO model name or weights path")
+    parser.add_argument(
+        "--world-classes",
+        default=None,
+        help="Comma-separated YOLO-World class prompts, for example deer",
+    )
     parser.add_argument("--confidence", type=float, default=0.4, help="Minimum detection confidence [0, 1]")
     parser.add_argument("--device", default=None, help="Inference device such as cpu, mps, or 0")
     parser.add_argument("--classes", default=None, help="Comma-separated project labels to display")
     parser.add_argument("--log", type=Path, default=Path("outputs/detections.jsonl"))
     parser.add_argument("--output", type=Path, default=None, help="Optional annotated MP4 path")
+    parser.add_argument("--image-output", type=Path, default=None, help="Save an annotated still image")
     parser.add_argument("--no-display", action="store_true", help="Disable the preview window")
     parser.add_argument("--max-frames", type=int, default=None, help="Stop after this many frames")
     parser.add_argument("--duration-seconds", type=float, default=None, help="Stop after this many elapsed seconds")
@@ -56,6 +64,19 @@ def run(args: argparse.Namespace) -> int:
         import cv2
 
         label_filter = parse_label_filter(args.classes)
+        world_classes = None
+        if args.world_classes is not None:
+            world_classes = [name.strip() for name in args.world_classes.split(",") if name.strip()]
+            if not world_classes:
+                raise ValueError("--world-classes must contain at least one class name")
+        if args.image_output is not None:
+            image_source = Path(args.source)
+            if image_source.suffix.lower() not in IMAGE_SUFFIXES:
+                raise ValueError("--image-output requires --source to be a still image file")
+            if args.image_output.suffix.lower() not in IMAGE_SUFFIXES:
+                raise ValueError("--image-output must use an image extension such as .jpg or .png")
+            if image_source.resolve() == args.image_output.resolve():
+                raise ValueError("--image-output must not overwrite the source image")
         if args.trial_id and args.target_present is None:
             raise ValueError("a trial requires --target-present or --target-absent")
         if args.alert_cooldown < 0:
@@ -63,8 +84,13 @@ def run(args: argparse.Namespace) -> int:
         audio_emitter = AudioEmitter(args.alert_sound) if args.alert_audio else None
         radar = SimulatedRadar(args.sim_range, args.sim_speed) if args.simulate_radar else None
         risk_evaluator = RiskEvaluator(args.warning_range, args.danger_range) if args.simulate_radar else None
+        detector = YoloDetector(
+            args.model,
+            confidence=args.confidence,
+            device=args.device,
+            world_classes=world_classes,
+        )
         source = VideoSource(args.source)
-        detector = YoloDetector(args.model, confidence=args.confidence, device=args.device)
     except (RuntimeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -117,6 +143,11 @@ def run(args: argparse.Namespace) -> int:
             if radar_observation is not None and risk is not None:
                 annotated = draw_risk_panel(annotated, radar_observation, risk)
 
+            if args.image_output is not None and frame_number == 1:
+                args.image_output.parent.mkdir(parents=True, exist_ok=True)
+                if not cv2.imwrite(str(args.image_output), annotated):
+                    raise RuntimeError(f"Could not save annotated image: {args.image_output}")
+
             if sink is None and args.output is not None:
                 height, width = annotated.shape[:2]
                 sink = VideoSink(args.output, source.fps, (width, height))
@@ -168,6 +199,8 @@ def run(args: argparse.Namespace) -> int:
     print(f"Processed {frame_number} frame(s). Log: {args.log}")
     if args.output is not None:
         print(f"Annotated video: {args.output}")
+    if args.image_output is not None and frame_number:
+        print(f"Annotated image: {args.image_output}")
     return 0 if frame_number else 1
 
 

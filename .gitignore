@@ -12,3 +12,12 @@ outputs/
 .codex-finalizer/
 .deck-build/
 .docx-review/
+
+# Local editor files, superseded assets, and unpublished sample imagery
+.idea/
+src/wildshield/ui/alert_backup.py
+/WildShieldAI-product-concept.png
+/armadillo.jpeg
+/deer1.jpeg
+/elephant1.jpeg
+/giraffe.webp

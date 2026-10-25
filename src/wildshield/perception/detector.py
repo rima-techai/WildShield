@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from wildshield.perception.labels import project_label
@@ -8,17 +8,42 @@ from wildshield.types import BoundingBox, Detection
 
 
 class YoloDetector:
-    """Thin adapter around Ultralytics YOLO with project-specific output."""
+    """Thin adapter around Ultralytics YOLO models with project-specific output."""
 
-    def __init__(self, model_path: str, confidence: float = 0.4, device: str | None = None) -> None:
+    def __init__(
+        self,
+        model_path: str,
+        confidence: float = 0.4,
+        device: str | None = None,
+        world_classes: Sequence[str] | None = None,
+    ) -> None:
         if not 0.0 <= confidence <= 1.0:
             raise ValueError("confidence must be between 0 and 1")
+        prompts = tuple(name.strip() for name in world_classes or () if name.strip())
+        if world_classes is not None and not prompts:
+            raise ValueError("world_classes must contain at least one non-empty class name")
+        expanded_prompts = tuple(
+            expanded
+            for prompt in prompts
+            for expanded in (
+                ("nine-banded armadillo",)
+                if prompt.lower() == "armadillo"
+                else (prompt,)
+            )
+        )
         try:
-            from ultralytics import YOLO
+            if prompts:
+                from ultralytics import YOLOWorld
+
+                self._model = YOLOWorld(model_path)
+                self._model.set_classes(list(dict.fromkeys(expanded_prompts)))
+            else:
+                from ultralytics import YOLO
+
+                self._model = YOLO(model_path)
         except ImportError as exc:
             raise RuntimeError("Ultralytics is not installed. Run: uv sync --extra dev") from exc
 
-        self._model = YOLO(model_path)
         self._confidence = confidence
         self._device = device
 
@@ -51,4 +76,3 @@ class YoloDetector:
 
         inference_ms = float(result.speed.get("inference", 0.0))
         return detections, inference_ms
-

@@ -7,6 +7,9 @@ from wildshield.perception.labels import parse_label_filter, project_label
     ("source", "expected"),
     [
         ("deer", "deer"),
+        ("elephant", "elephant"),
+        ("armadillo", "armadillo"),
+        ("nine-banded armadillo", "armadillo"),
         ("DOG", "dog"),
         ("cow", "cow"),
         ("person", "person"),
@@ -22,6 +25,7 @@ def test_project_label(source: str, expected: str) -> None:
 
 def test_parse_label_filter() -> None:
     assert parse_label_filter("person, cup") == frozenset({"person", "cup"})
+    assert parse_label_filter("armadillo") == frozenset({"armadillo"})
     assert parse_label_filter("animal_model") == frozenset({"animal_model"})
     assert parse_label_filter(None) is None
 

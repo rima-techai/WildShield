@@ -2,7 +2,13 @@ from pathlib import Path
 
 import numpy as np
 
-from wildshield.fusion_demo import build_parser, compose_dashboard, fusion_status, unique_snapshot_path
+from wildshield.fusion_demo import (
+    build_parser,
+    compose_dashboard,
+    confirmed_animal_detections,
+    fusion_status,
+    unique_snapshot_path,
+)
 from wildshield.types import BoundingBox, Detection
 
 
@@ -15,6 +21,13 @@ def test_fusion_statuses_are_explicit():
     assert fusion_status([], True) == "THERMAL TARGET | RGB CLASS UNAVAILABLE"
     assert fusion_status([detection()], False) == "RGB TARGET | NO THERMAL CONFIRMATION"
     assert fusion_status([], False) == "NO TARGET"
+
+
+def test_fusion_alert_requires_rgb_animal_and_thermal_confirmation():
+    animal = detection()
+    assert confirmed_animal_detections([animal], True) == [animal]
+    assert confirmed_animal_detections([animal], False) == []
+    assert confirmed_animal_detections([], True) == []
 
 
 def test_dashboard_has_two_panels_and_footer():

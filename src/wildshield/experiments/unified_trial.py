@@ -25,9 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--notes", default="")
     parser.add_argument("--source", default="0")
     parser.add_argument("--model", default="yolo11n.pt")
+    parser.add_argument("--world-classes", default=None, help="YOLO-World class prompts, for example deer")
     parser.add_argument("--classes", default="person")
     parser.add_argument("--confidence", type=float, default=0.6)
     parser.add_argument("--device", default=None)
+    parser.add_argument("--image-output", type=Path, default=None, help="Save an annotated still image for an RGB image source")
     parser.add_argument("--warm-threshold", type=float, default=3.0)
     parser.add_argument("--min-hot-pixels", type=int, default=4)
     parser.add_argument("--persistence", type=int, default=2)
@@ -49,6 +51,8 @@ def validate(args: argparse.Namespace) -> None:
         raise ValueError("target-absent trials must use motion=empty")
     if not args.target_present and args.distance_m != 0:
         raise ValueError("target-absent trials must use distance 0")
+    if args.mode != "rgb" and (args.image_output is not None or args.world_classes is not None):
+        raise ValueError("--image-output and --world-classes are only supported for RGB trials")
 
 
 def trial_paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
@@ -95,6 +99,8 @@ def summarize(log_path: Path, args: argparse.Namespace) -> dict[str, Any]:
             "duration_seconds_requested":args.duration_seconds,
             "rgb_classes":args.classes if args.mode in ("rgb","fusion") else None,
             "rgb_confidence":args.confidence if args.mode in ("rgb","fusion") else None,
+            "rgb_model":args.model if args.mode in ("rgb","fusion") else None,
+            "rgb_world_classes":args.world_classes if args.mode in ("rgb","fusion") else None,
             "warm_threshold_c":args.warm_threshold if args.mode in ("thermal","fusion") else None,
             "simulated_radar_used":args.mode in ("thermal","fusion"),
         },
@@ -117,9 +123,9 @@ def summarize(log_path: Path, args: argparse.Namespace) -> dict[str, Any]:
 
 
 def runner_args(args: argparse.Namespace, log: Path, snapshot: Path) -> SimpleNamespace:
-    common=dict(source=args.source,model=args.model,confidence=args.confidence,device=args.device,classes=args.classes,log=log,no_display=args.no_display,max_frames=None,duration_seconds=args.duration_seconds,alert_audio=args.alert_audio,alert_sound=args.alert_sound,alert_cooldown=3.0)
+    common=dict(source=args.source,model=args.model,confidence=args.confidence,device=args.device,classes=args.classes,log=log,no_display=args.no_display,max_frames=None,duration_seconds=args.duration_seconds,alert_audio=args.alert_audio,alert_sound=args.alert_sound,alert_cooldown=3.0,world_classes=args.world_classes)
     if args.mode == "rgb":
-        return SimpleNamespace(**common,output=None,alert=False,simulate_radar=False,sim_range=5.0,sim_speed=0.6,warning_range=3.0,danger_range=1.0,danger_alert_only=False,trial_id=None,target_present=None,condition=args.condition,motion=args.motion,trial_notes=args.notes)
+        return SimpleNamespace(**common,output=None,image_output=args.image_output,alert=False,simulate_radar=False,sim_range=5.0,sim_speed=0.6,warning_range=3.0,danger_range=1.0,danger_alert_only=False,trial_id=None,target_present=None,condition=args.condition,motion=args.motion,trial_notes=args.notes)
     thermal=dict(refresh_rate=2,warm_threshold=args.warm_threshold,min_hot_pixels=args.min_hot_pixels,persistence=args.persistence,snapshot=snapshot,no_log=False,save_final=True,simulate_radar=True,sim_range=5.0,sim_speed=0.6,warning_range=3.0,danger_range=1.0)
     if args.mode == "thermal":
         return SimpleNamespace(scale=20,**thermal,**{k:v for k,v in common.items() if k not in ("source","model","confidence","device","classes")})
@@ -150,6 +156,8 @@ def run(args: argparse.Namespace) -> int:
     summary=summarize(log_path,args)
     if snapshot_path.exists():
         summary["files"]["snapshot"]=str(snapshot_path)
+    if args.image_output is not None and args.image_output.exists():
+        summary["files"]["annotated_image"]=str(args.image_output)
     if video_path.exists():
         summary["files"]["video"]=str(video_path)
     summary_path.write_text(json.dumps(summary,indent=2)+"\n")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-PROJECT_LABELS = frozenset({"deer", "dog", "cow", "person", "cup", "animal_model", "other"})
+PROJECT_LABELS = frozenset({"deer", "dog", "cow", "person", "cup", "animal_model", "other", "elephant", "armadillo"})
 
 
 def project_label(model_label: str) -> str:
@@ -9,7 +9,9 @@ def project_label(model_label: str) -> str:
     normalized = model_label.strip().lower()
     if normalized == "teddy bear":
         return "animal_model"
-    if normalized in {"deer", "dog", "cow", "person", "cup"}:
+    if normalized == "nine-banded armadillo":
+        return "armadillo"
+    if normalized in {"deer", "dog", "cow", "person", "cup", "elephant", "armadillo"}:
         return normalized
     return "other"
 

@@ -15,7 +15,7 @@ from wildshield.perception.thermal_detector import FRAME_HEIGHT, FRAME_WIDTH, Th
 from wildshield.risk.evaluator import RiskEvaluator, RiskLevel
 from wildshield.sensors.simulated_radar import SimulatedRadar
 from wildshield.types import BoundingBox, Detection
-from wildshield.ui.alert import AudioEmitter, DangerTransitionGate, DetectionAlert
+from wildshield.ui.alert import AudioEmitter, DetectionAlert
 from wildshield.ui.overlay import draw_risk_panel
 
 
@@ -97,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sim-speed", type=float, default=0.6, help="simulated approach speed in m/s")
     parser.add_argument("--warning-range", type=float, default=3.0, help="warning boundary in meters")
     parser.add_argument("--danger-range", type=float, default=1.0, help="danger boundary in meters")
-    parser.add_argument("--alert-audio", action="store_true", help="play audio when simulated risk reaches DANGER")
+    parser.add_argument("--alert-audio", action="store_true", help="play audio when a warm target is confirmed")
     parser.add_argument("--alert-sound", type=Path, default=None, help="custom audio file")
     parser.add_argument("--alert-cooldown", type=float, default=3.0, help="seconds between danger alerts")
     return parser
@@ -122,7 +122,6 @@ def run(args: argparse.Namespace) -> int:
         risk_evaluator = RiskEvaluator(args.warning_range, args.danger_range) if radar is not None else None
         audio = AudioEmitter(args.alert_sound) if args.alert_audio else None
         alert = DetectionAlert(args.alert_cooldown, emit=audio) if audio is not None else None
-        danger_gate = DangerTransitionGate()
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
         print(f"error: could not initialize thermal system: {exc}", file=sys.stderr)
         return 1
@@ -170,8 +169,7 @@ def run(args: argparse.Namespace) -> int:
                     risk = risk_evaluator.evaluate(radar_observation)
             elif radar is not None:
                 radar.reset(1)
-            entered_danger = danger_gate.update(risk.level if risk is not None else None)
-            if alert is not None and entered_danger and synthetic_detection is not None:
+            if alert is not None and confirmed and synthetic_detection is not None:
                 alert.update([synthetic_detection])
 
             fps = frames / max(time.monotonic() - started, 1e-9)

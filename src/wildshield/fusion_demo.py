@@ -14,6 +14,7 @@ from wildshield.fusion import FusionDecision, evaluate_fusion
 
 from wildshield.io.logger import JsonlLogger
 from wildshield.io.video import VideoSink, VideoSource
+from wildshield.io.audio_video import mux_alert_audio
 from wildshield.perception.detector import YoloDetector
 from wildshield.perception.labels import parse_label_filter
 from wildshield.perception.thermal_detector import FRAME_HEIGHT, FRAME_WIDTH, ThermalTarget, WarmTargetDetector
@@ -21,7 +22,7 @@ from wildshield.risk.evaluator import RiskEvaluator, RiskLevel
 from wildshield.sensors.simulated_radar import SimulatedRadar
 from wildshield.sensors.thermal_view import annotate_frame, colorize_frame
 from wildshield.types import BoundingBox, Detection
-from wildshield.ui.alert import AudioEmitter, DangerTransitionGate, DetectionAlert
+from wildshield.ui.alert import AudioEmitter, DetectionAlert, RiskAudioAlert
 from wildshield.ui.overlay import draw_overlay, draw_risk_panel
 
 
@@ -37,6 +38,13 @@ def fusion_status(rgb_detections: list[Detection], thermal_confirmed: bool) -> s
     if rgb_detections:
         return "RGB TARGET | NO THERMAL CONFIRMATION"
     return "NO TARGET"
+
+
+def confirmed_animal_detections(
+    rgb_detections: list[Detection], thermal_confirmed: bool
+) -> list[Detection]:
+    """Return RGB animal detections only when thermal also confirms warmth."""
+    return rgb_detections if rgb_detections and thermal_confirmed else []
 
 
 def unique_snapshot_path(path: Path) -> Path:
@@ -115,6 +123,7 @@ def run(args: argparse.Namespace) -> int:
         return 2
     source = None
     logger = None
+    audio_events: list[tuple[float, Path]] = []
     try:
         import board
         import adafruit_mlx90640
@@ -128,9 +137,9 @@ def run(args: argparse.Namespace) -> int:
         thermal_detector = WarmTargetDetector(args.warm_threshold, args.min_hot_pixels, args.persistence)
         radar = SimulatedRadar(args.sim_range, args.sim_speed)
         risk_evaluator = RiskEvaluator(args.warning_range, args.danger_range)
-        audio = AudioEmitter(args.alert_sound) if args.alert_audio else None
+        audio = AudioEmitter(args.alert_sound, on_play=lambda sound: audio_events.append(((frame_number - 1) / getattr(args, "video_fps", 1.0), sound))) if args.alert_audio else None
         alert = DetectionAlert(args.alert_cooldown, emit=audio) if audio is not None else None
-        danger_gate = DangerTransitionGate()
+        risk_audio = RiskAudioAlert(audio) if audio is not None else None
         logger = JsonlLogger(args.log)
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
         if source is not None:
@@ -180,9 +189,13 @@ def run(args: argparse.Namespace) -> int:
             else:
                 radar.reset(1)
             decision = evaluate_fusion(rgb_detections, thermal_confirmed, radar_observation)
-            entered_danger = danger_gate.update(risk.level if risk is not None else None)
-            if alert is not None and entered_danger and thermal_visual_detection is not None:
-                alert.update([thermal_visual_detection])
+            alert_detections = confirmed_animal_detections(rgb_detections, thermal_confirmed)
+            risk_level = risk.level if risk is not None else None
+            if risk_audio is not None:
+                risk_audio.update(risk_level)
+            # Give risk-state audio priority over ordinary detection sounds.
+            if alert is not None and alert_detections and risk_level not in (RiskLevel.WARNING, RiskLevel.DANGER):
+                alert.update(alert_detections)
 
             fps = frame_number / max(time.monotonic() - started, 1e-9)
             rgb_annotated = draw_overlay(rgb_frame.copy(), rgb_detections, fps, captured_at.astimezone())
@@ -237,6 +250,13 @@ def run(args: argparse.Namespace) -> int:
             video_sink.close()
         if not args.no_display:
             cv2.destroyAllWindows()
+
+    if video_sink is not None and audio_events:
+        try:
+            mux_alert_audio(args.video_output, audio_events, frame_number / getattr(args, "video_fps", 1.0))
+            print("Alert audio embedded in dashboard video.")
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Warning: video saved without embedded audio: {exc}", file=sys.stderr)
 
     if (args.no_display or args.save_final) and last_dashboard is not None:
         args.snapshot.parent.mkdir(parents=True, exist_ok=True)

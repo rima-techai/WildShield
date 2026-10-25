@@ -10,6 +10,8 @@ from wildshield.types import RadarObservation
 
 COLORS = {
     "deer": (0, 165, 255),
+    "elephant": (150, 100, 220),
+    "armadillo": (120, 150, 190),
     "dog": (255, 180, 0),
     "cow": (180, 105, 255),
     "person": (0, 220, 255),
