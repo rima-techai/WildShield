@@ -21,3 +21,8 @@ src/wildshield/ui/alert_backup.py
 /deer1.jpeg
 /elephant1.jpeg
 /giraffe.webp
+
+# DECA materials kept locally, excluded from the CAC repository
+/*Pitchdeck*.pdf
+/WildShieldAI_DECA_ESB_Business_Plan.docx
+/tools/build_deca_plan.py
