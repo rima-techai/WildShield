@@ -26,3 +26,11 @@ src/wildshield/ui/alert_backup.py
 /*Pitchdeck*.pdf
 /WildShieldAI_DECA_ESB_Business_Plan.docx
 /tools/build_deca_plan.py
+
+# Private settings, credentials, and raw personal media
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store

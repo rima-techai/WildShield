@@ -1,10 +1,10 @@
 # WildShield
 
-WildShield is an educational prototype for detecting potential animal hazards near a model roadway. This first milestone provides RGB-camera detection using a pretrained YOLO model.
+WildShield is a Python desktop application and educational prototype exploring wildlife-hazard detection near a model roadway. It combines RGB object recognition, MLX90640 thermal sensing, a two-panel dashboard, audio alerts, recorded trials, and local experiment logs. Range, approach speed, and SAFE/WARNING/DANGER states use simulated radar; they are not measured collision predictions.
 
 It is not a vehicle safety system. Do not use it to make driving decisions or control a vehicle.
 
-## RGB baseline
+## Current capabilities
 
 The program supports:
 
@@ -13,7 +13,9 @@ The program supports:
 - Optional YOLO-World open-vocabulary detection guided by class prompts such as `deer`.
 - Bounding boxes, confidence, FPS, and timestamps.
 - JSON Lines logs for later experiments.
-- Optional annotated video output.
+- Combined RGB and thermal dashboard with same-cycle detection decisions.
+- Live speaker alerts and fusion MP4 exports with generated alert audio.
+- Optional annotated RGB video output (video only).
 - Headless operation for prerecorded experiments.
 
 ## Setup
@@ -23,6 +25,8 @@ Python 3.12 is recommended.
 ```bash
 uv sync --extra dev
 ```
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first. On macOS, allow camera access for the terminal/Python application when prompted. Connect the thermal hardware before running thermal or fusion commands.
 
 The first real run downloads the small pretrained `yolo11n.pt` weights if they are not already cached.
 
@@ -46,7 +50,7 @@ Move the cup around the frame, partly hide it, and vary the room lighting. A gre
 
 ### Test deer detection with a still image
 
-Put a deer photo such as `deer1.jpg` in the project folder, then run YOLO-World on that image:
+Supply your own appropriately licensed deer photo such as `deer1.jpg` in the project folder, then run YOLO-World on that image:
 
 ```bash
 uv run python -m wildshield.main \
@@ -70,7 +74,7 @@ uv run python -m wildshield.main --source 0 --classes cup --confidence 0.25 --al
 
 macOS uses its built-in Ping sound. To select another audio file, add `--alert-sound /absolute/path/to/sound.wav`. On Raspberry Pi/Linux, install `aplay` or `paplay` and provide a WAV file with `--alert-sound`.
 
-With `--alert-audio`, WildShield selects `animal_warning.aiff` for recognized animal detections (including YOLO-World prompts such as `elephant` and `armadillo`), and falls back to the configured/default sound for other labels. Use the matching project label as the filter (for example, `--classes armadillo`) so the filter does not discard the detection before an alert is generated.
+With `--alert-audio`, WildShield selects `animal_warning.aiff` for recognized animal detections (including YOLO-World prompts such as `elephant` and `armadillo`), selects `person_warning.aiff` for person detections, and falls back to the configured/default sound for other labels. A custom `--alert-sound` sets the fallback; existing category sounds take priority. Use the matching project label as the filter (for example, `--classes armadillo`) so the filter does not discard the detection before an alert is generated.
 
 ## No-hardware simulated radar demonstration
 
@@ -181,36 +185,37 @@ BLINKA_MCP2221=1 uv run python -m wildshield.sensors.thermal_view \
   --alert-audio
 ```
 
-With `--alert-audio`, the thermal viewer plays the thermal warning as soon as a warm target is confirmed. This command does not enable radar simulation. Warm-target confirmation requires a region at least the configured threshold above the background, covering enough sensor pixels, for the configured number of consecutive frames.
+With `--alert-audio`, the thermal viewer plays the thermal warning as soon as a warm target is confirmed. The example enables radar simulation through `--simulate-radar`; omit that flag for thermal-only sensing. Audio in this thermal viewer is triggered by confirmed warmth, not risk-state transitions. Warm-target confirmation requires a region at least the configured threshold above the background, covering enough sensor pixels, for the configured number of consecutive frames.
 
 ## Combined RGB + thermal dashboard
 
-To test a stuffed animal as a YOLO `dog` class while also confirming it is warm, point both the Mac webcam and MLX90640 at the toy, then run:
+For a controlled warmed stuffed-animal surrogate, use `animal_model`, which maps the pretrained model's `teddy bear` class. Aim both sensors at the same test area:
 
 ```bash
-BLINKA_MCP2221=1 uv run python -m wildshield.experiments.unified_trial \
+BLINKA_MCP2221=1 uv run wildshield-trial \
   --mode fusion \
-  --trial-id thermal_dark_stuffed_animal_dog_test \
-  --condition dark \
+  --trial-id animal-model-bright-present-NEW \
+  --condition bright \
   --target-present \
   --distance-m 1 \
   --motion stationary \
   --source 0 \
   --model yolo11n.pt \
-  --classes dog \
-  --confidence 0.20 \
-  --duration-seconds 30 \
+  --classes animal_model \
+  --confidence 0.50 \
+  --duration-seconds 10 \
   --warm-threshold 3.0 \
   --min-hot-pixels 4 \
   --persistence 2 \
   --alert-audio \
-  --output-dir outputs/trials/thermal_dark_stuffed_animal_test \
-  --notes "Testing a warmed stuffed toy as dog with RGB and thermal fusion"
+  --notes "Fixed mount; warmed stuffed-animal surrogate; room lights on"
 ```
 
-The fusion dashboard displays RGB and thermal views. With `--alert-audio`, it plays the animal warning when YOLO detects the selected class (`dog`) and the thermal detector confirms a warm region in the same cycle. It does not wait for simulated radar to reach `DANGER`. The results are written under `outputs/trials/thermal_dark_stuffed_animal_test`. The `dark` condition records the lighting condition; it does not affect thermal sensing. YOLO may not classify a plush toy as a dog, even if the thermal sensor confirms warmth.
+Choose a new trial ID for every run to avoid overwriting results. Enter the actual lighting, measured distance, and motion. For a human test, use `--classes person` and describe the person in the notes. Model classification of a toy is not guaranteed.
 
-Use `--mode thermal` instead if you only want warm-region detection; thermal-only mode does not run YOLO and cannot identify a `dog` class.
+Fusion trials save an MP4, final PNG, JSONL log, and summary JSON under `outputs/trials/`. With `--alert-audio`, ordinary detection audio requires RGB and thermal confirmation; simulated WARNING/DANGER transitions can sound on thermal evidence even if RGB misses. The trial timer starts after the first processed sensor/model frame, so startup may take longer than the requested duration.
+
+Use `--mode thermal` for warm-region detection without RGB classification. Thermal sensing alone cannot identify species. RGB and thermal detections are combined temporally, not spatially calibrated; simultaneous detections do not establish a match in a multi-target scene.
 
 The dashboard now uses adaptive fusion rule version 2. RGB plus thermal confirms an animal; thermal plus approaching radar produces a probable-animal warning; a single sensor without approaching radar produces a monitor state. Every JSONL row stores both the original raw `fusion_status` and the versioned `fusion_decision`. A decision based on prototype radar data is explicitly marked `radar_simulated: true` and must not be presented as measured radar performance.
 
@@ -222,7 +227,7 @@ uv run python tools/replay_adaptive_fusion.py
 
 The replay writes `outputs/competition/adaptive_fusion_replay.md` and `adaptive_fusion_replay.csv`. This is a retrospective software analysis, not a new physical experiment.
 
-For a person-only RGB demonstration, keep the default `--classes person,dog,cow,deer`. Use `--classes person` to remove other supported labels.
+The standalone `wildshield-fusion` command defaults to `person,dog,cow,deer`; `wildshield-trial` defaults to `person`. Use `--classes person` explicitly for a person test. The default model still has no deer class.
 
 ## Unified controlled experiment command
 
@@ -259,13 +264,13 @@ uv run python -m wildshield.experiments.unified_trial \
   --confidence 0.50 \
   --duration-seconds 10 \
   --alert-audio \
-  --image-output outputs/trails/testing_with_animal_images/deer_image_test_annotated.jpg \
+  --image-output outputs/trials/testing_with_animal_images/deer_image_test_annotated.jpg \
   --no-display \
-  --output-dir outputs/trails/testing_with_animal_images \
+  --output-dir outputs/trials/testing_with_animal_images \
   --notes "Testing YOLO-World deer detection with a static image"
 ```
 
-The still image is processed once, so `--duration-seconds` does not repeat inference for ten seconds. The trial's JSONL log, summary, and annotated image are saved under `outputs/trails/testing_with_animal_images`. `BLINKA_MCP2221=1` is not needed for an RGB-only trial.
+The still image is processed once, so `--duration-seconds` does not repeat inference for ten seconds. The trial's JSONL log, summary, and annotated image are saved under `outputs/trials/testing_with_animal_images`. `BLINKA_MCP2221=1` is not needed for an RGB-only trial.
 
 ## Known baseline limitation
 
@@ -279,7 +284,7 @@ This concept illustrates how WildShield is intended to look after build-out: an 
 
 ## Fusion risk-state audio
 
-Enable `--alert-audio` to hear the fusion dashboard. On entry to simulated-radar `WARNING`, it plays `assets/sounds/thermal_warning.aiff`; on entry to `DANGER`, it plays `assets/sounds/danger_warning.aiff`. These transitions can sound with thermal confirmation alone, even when RGB misses the target. Each state sounds once until the state changes; losing the target re-arms the alerts. Ordinary combined RGB/thermal detection sounds remain active outside warning/danger states. Radar-based risk remains simulated, not a measured collision prediction.
+Enable `--alert-audio` to hear the fusion dashboard. On entry to simulated-radar `WARNING`, it plays `assets/sounds/risk_warning.aiff`; on entry to `DANGER`, it plays `assets/sounds/risk_danger.aiff`. These transitions can sound with thermal confirmation alone, even when RGB misses the target. Each state sounds once until the state changes; losing the target re-arms the alerts. Ordinary combined RGB/thermal detection sounds remain active outside warning/danger states. Radar-based risk remains simulated, not a measured collision prediction.
 
 ### Audio in saved fusion videos
 
@@ -288,7 +293,7 @@ With `--alert-audio`, fusion dashboard MP4s now embed the generated alert sounds
 To create a separate copy of an older recording with WARNING/DANGER sounds reconstructed from its matching JSONL log:
 
 ```bash
-/private/tmp/wildshield-runtime/bin/python tools/add_recorded_risk_audio.py outputs/trials/video-animal-bright-present-202.mp4
+uv run python tools/add_recorded_risk_audio.py outputs/trials/YOUR_TRIAL_ID.mp4
 ```
 
 The output ends in `_with_alerts.mp4`; an `.audio.json` sidecar documents reconstructed sounds. Originals are preserved. Radar-based risk remains simulated.
@@ -296,3 +301,28 @@ The output ends in `_with_alerts.mp4`; an `.audio.json` sidecar documents recons
 ### Person and risk audio wording
 
 RGB person detections use `person_warning.aiff` ("Person detected"). Simulated risk transitions use neutral `risk_warning.aiff` and `risk_danger.aiff` messages about a target, without claiming it is an animal. Thermal-only sensing cannot identify the species. Original uploaded sound files are preserved. Restart the application for this change; existing MP4 audio is unchanged.
+
+## Evidence, analysis, and repository contents
+
+Controlled person and warmed-model experiments are separate datasets. Wildlife still-image tests assess RGB recognition only. Adaptive fusion replay is retrospective software analysis using simulated radar, not additional physical trials. Random Forest analysis is a proposed improvement, not a currently deployed classifier.
+
+Generated reports, trial videos, and logs are kept locally under `outputs/` and are not distributed in this repository. Reporting and demo scripts require the corresponding local evidence files. Wildlife sample images and model weights are also excluded; supply your own images and download the model weights as needed.
+
+- `tools/build_overall_experiment_report.py`: inventory local trial summaries and link experiment groups.
+- `tools/build_slide_charts.py`: create charts from existing local result tables.
+- `tools/replay_adaptive_fusion.py`: evaluate revised rules on accepted recorded animal-model trials.
+- `design/`: provisional OpenSCAD enclosure, engineering drawing, and handoff notes. Dimensions require component verification before fabrication.
+
+Development used OpenAI Codex assistance for code, debugging, analysis, tests, documentation, and design artifacts; the product visualization used OpenAI image generation. Object recognition uses pretrained Ultralytics models. Student contributions and AI assistance should be described accurately in competition submissions.
+
+### Slow startup in a cloud-synced folder
+
+Keep Python environments outside OneDrive/iCloud to reduce file-provider delays. For example, on macOS:
+
+```bash
+export UV_PROJECT_ENVIRONMENT="$HOME/.cache/wildshield/venv"
+uv sync --extra dev --extra thermal
+BLINKA_MCP2221=1 PYTHONUNBUFFERED=1 uv run wildshield-trial --help
+```
+
+Keep that environment variable set in the terminal used for subsequent `uv run` commands. This changes the environment location, not the project or output directory. Camera/sensor initialization and first model loading can still take time.
